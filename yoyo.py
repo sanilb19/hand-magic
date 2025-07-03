@@ -8,8 +8,12 @@ mp_hands = mp.solutions.hands
 hands = mp_hands.Hands()
 mp_draw = mp.solutions.drawing_utils
 
-# Ball state
-balls = [{"attached": True, "pos": np.array([0, 0], dtype=np.float32), "vel": np.array([0, 0], dtype=np.float32)} for _ in range(5)]
+# Ball state: 5 fingertip balls + 5 knuckle balls
+balls = [
+    {"attached": True, "pos": np.array([0, 0], dtype=np.float32), "vel": np.array([0, 0], dtype=np.float32), "type": "tip"} for _ in range(5)
+] + [
+    {"attached": True, "pos": np.array([0, 0], dtype=np.float32), "vel": np.array([0, 0], dtype=np.float32), "type": "knuckle"} for _ in range(5)
+]
 
 # Palm tracking for velocity
 prev_palm_center = None
@@ -42,6 +46,19 @@ while True:
         
         palm_center = landmarks[0]
         fingertip_indices = [4, 8, 12, 16, 20]
+        knuckle_indices = [2, 6, 10, 14, 18]  # MCP joints
+        all_indices = fingertip_indices + knuckle_indices
+        
+        # Compute palm normal: from wrist (0) to average of MCP knuckles (5, 9, 13, 17, 1)
+        mcp_indices = [5, 9, 13, 17, 1]
+        mcp_mean = np.mean([landmarks[j] for j in mcp_indices], axis=0)
+        palm_normal = mcp_mean - landmarks[0]
+        palm_normal /= (np.linalg.norm(palm_normal) + 1e-5)
+        
+        # For each fingertip, compute offset magnitude (distance to knuckle)
+        tip_offsets = [np.linalg.norm(landmarks[tip_idx] - landmarks[knuckle_idx]) for tip_idx, knuckle_idx in zip(fingertip_indices, knuckle_indices)]
+        # For knuckles, offset is 0.7 * distance to palm center
+        knuckle_offsets = [np.linalg.norm(landmarks[knuckle_idx] - palm_center) * 0.7 for knuckle_idx in knuckle_indices]
         
         # Palm velocity tracking (restored)
         if prev_palm_center is not None:
@@ -69,10 +86,20 @@ while True:
         if prev_throw_openness is None:
             prev_throw_openness = throw_openness
         
-        for idx, i in enumerate(fingertip_indices):
+        for idx, i in enumerate(all_indices):
             ball = balls[idx]
-            finger_pos = landmarks[i]
-            
+            if idx < 5:
+                # Fingertip balls
+                finger_pos = landmarks[i]
+                offset = tip_offsets[idx]
+                ref_pos = finger_pos + palm_normal * offset
+            else:
+                # Knuckle balls
+                kidx = idx - 5
+                finger_pos = landmarks[i]
+                offset = knuckle_offsets[kidx]
+                ref_pos = finger_pos + palm_normal * offset
+            # All balls now behave the same:
             if ball["attached"]:
                 lerp_speed = 0.7
                 ball["pos"] += (finger_pos - ball["pos"]) * lerp_speed
@@ -86,25 +113,23 @@ while True:
                     direction = palm_velocity / (np.linalg.norm(palm_velocity) + 1e-5)
                     ball["vel"] = direction * min(speed * 0.12, 60)
             else:
-                # Retrieve: only reattach if fingers are close together
-                dir_to_finger = finger_pos - ball["pos"]
-                dist = np.linalg.norm(dir_to_finger)
-                # Only allow fast retrieval if ball is moving toward the finger
-                moving_toward_finger = np.dot(ball["vel"], dir_to_finger) > 0
-                if retrieve_openness < retrieve_close_thresh and moving_toward_finger:
+                dir_to_ref = ref_pos - ball["pos"]
+                dist = np.linalg.norm(dir_to_ref)
+                moving_toward_ref = np.dot(ball["vel"], dir_to_ref) > 0
+                if retrieve_openness < retrieve_close_thresh and moving_toward_ref:
                     ball["attached"] = True
                     ball["pos"] = finger_pos.copy()
                     ball["vel"] = np.zeros(2, dtype=np.float32)
                 else:
-                    if dist < 100 and moving_toward_finger:
+                    if dist < 100 and moving_toward_ref:
                         return_lerp_speed = 0.25
-                        ball["pos"] += (finger_pos - ball["pos"]) * return_lerp_speed
+                        ball["pos"] += (ref_pos - ball["pos"]) * return_lerp_speed
                         ball["vel"] = np.zeros(2, dtype=np.float32)
                     else:
                         if dist > 1e-2:
-                            dir_to_finger /= dist
+                            dir_to_ref /= dist
                         damping = 0.90
-                        spring_force = dir_to_finger * (dist * spring_k)
+                        spring_force = dir_to_ref * (dist * spring_k)
                         ball["vel"] += spring_force * dt
                         ball["vel"] *= damping
                         ball["pos"] += ball["vel"] * dt
@@ -114,8 +139,10 @@ while True:
         mp_draw.draw_landmarks(img, hand, mp_hands.HAND_CONNECTIONS)
         
         # Draw balls
-        for ball in balls:
+        for idx, ball in enumerate(balls):
             color = (0, 255, 255) if not ball["attached"] else (0, 255, 100)
+            if idx >= 5:
+                color = (255, 100, 0) if not ball["attached"] else (100, 255, 255)
             cv2.circle(img, tuple(ball["pos"].astype(int)), 14, color, -1)
     
     cv2.imshow("Yoyo Effect", img)
