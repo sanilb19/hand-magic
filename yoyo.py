@@ -26,7 +26,7 @@ palm_velocity = np.array([0, 0], dtype=np.float32)
 prev_throw_openness = None
 
 # Feature flag for fancy effect
-FANCY_MODE = False
+FANCY_MODE = True
 
 cap = cv2.VideoCapture(0)
 prev_time = time.time()
@@ -191,22 +191,31 @@ while True:
             if FANCY_MODE:
                 if all_attached:
                     # Update big red ball trail every frame
-                    big_pos = tuple(landmarks[9].astype(int))
+                    big_pos = landmarks[9].copy()
+                    # Offset toward palm center for more 'inside hand' effect
+                    palm_center = landmarks[0]
+                    offset_vec = palm_center - big_pos
+                    big_pos += offset_vec * 0.25  # Move 25% of the way toward palm center
+                    big_pos = tuple(big_pos.astype(int))
                     big_ball_trail.append(big_pos)
                     if len(big_ball_trail) > 5:
                         big_ball_trail = big_ball_trail[-5:]
-                    # Render one big red ball at landmark 9 (index finger MCP)
+                    # Render one big red ball at offset position
                     orb_layer = np.zeros_like(img)
                     color = (0, 0, 255)  # neon red (BGR)
                     # Big comet trail using last positions
                     for t, trail_pos in enumerate(reversed(big_ball_trail)):
-                        radius = max(10, 32 - t * 4)
+                        radius = max(8, 24 - t * 3)
                         trail_color = tuple(int(c * 0.7) for c in color)
                         cv2.circle(orb_layer, trail_pos, radius, trail_color, -1)
+                    # Extra fuzzy glow layers (smaller)
+                    cv2.circle(orb_layer, big_pos, 60, color, -1)
                     orb_layer = cv2.GaussianBlur(orb_layer, (81,81), 0)
-                    # Main big orb
-                    cv2.circle(orb_layer, big_pos, 32, color, -1)
-                    img = cv2.addWeighted(img, 1.0, orb_layer, 0.8, 0)
+                    cv2.circle(orb_layer, big_pos, 36, color, -1)
+                    orb_layer = cv2.GaussianBlur(orb_layer, (51,51), 0)
+                    # Main big orb (smaller)
+                    cv2.circle(orb_layer, big_pos, 20, color, -1)
+                    img = cv2.addWeighted(img, 1.0, orb_layer, 0.85, 0)
                     break  # Only draw one big ball
                 else:
                     orb_layer = np.zeros_like(img)
