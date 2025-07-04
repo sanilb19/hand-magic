@@ -48,6 +48,8 @@ python3 yoyo.py
 - **Catch:** Bring your fingers together to zip all orbs back and merge into a single glowing red ball.
 - **Orbs:** Neon blue when floating, neon red when caught.
 
+- Note: Works best when hand is 2-3 feet from camera.
+
 ---
 
 ## Customization
