@@ -32,7 +32,7 @@ pip install -r requirements.txt
 ## Usage
 
 ```bash
-python yoyo.py
+python3 yoyo.py
 ```
 
 - Press `q` to quit.
