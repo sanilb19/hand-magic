@@ -3,7 +3,7 @@
 A real-time, interactive hand-tracking yoyo/particle effect using OpenCV and MediaPipe.  
 Features glowing comet orbs, neon edge outlines, and dynamic group physics—all controlled by your hand gestures!
 
-[Images/magic-hands.gif]
+![Demo gif](Images/magic-hands.gif)
 
 ---
 
